@@ -42,7 +42,7 @@ import (
 )
 
 // Constants used by installers
-const (
+var (
 	EdgeServiceFile    = "edgecore.service"
 	CloudServiceFile   = "cloudcore.service"
 	KubeEdgePath       = "/etc/kubeedge/"
@@ -83,6 +83,21 @@ var (
 	KubeEdgeDownloadURL  = "https://github.com/kubeedge/kubeedge/releases/download"
 	ServiceFileURLFormat = "https://raw.githubusercontent.com/kubeedge/kubeedge/release-%s/build/tools/%s"
 )
+
+func init() {
+	if str, ok := os.LookupEnv("KubeEdgeDownloadURL"); ok {
+		KubeEdgeDownloadURL = str
+	}
+	if str, ok := os.LookupEnv("ServiceFileURLFormat"); ok {
+		ServiceFileURLFormat = str
+	}
+	if str, ok := os.LookupEnv("KubeEdgeCRDDownloadURL"); ok {
+		KubeEdgeCRDDownloadURL = str
+	}
+	if str, ok := os.LookupEnv("KubeLatestReleaseVersionURL"); ok {
+		latestReleaseVersionURL = str
+	}
+}
 
 // AddToolVals gets the value and default values of each flags and collects them in temporary cache
 func AddToolVals(f *pflag.Flag, flagData map[string]types.FlagData) {
@@ -264,23 +279,33 @@ func installKubeEdge(options types.InstallOptions, arch string, version semver.V
 		fmt.Printf("Expected or Default KubeEdge version %v is already downloaded and will checksum for it. \n", version)
 		if success, _ := checkSum(filename, checksumFilename, version, options.TarballPath); !success {
 			fmt.Printf("%v in your path checksum failed and do you want to delete this file and try to download again? \n", filename)
-			for {
-				confirm, err := askForconfirm()
-				if err != nil {
-					fmt.Println(err.Error())
-					continue
+			for i := 0; i < 3; i++ {
+				//confirm, err := askForconfirm()
+				//if err != nil {
+				//	fmt.Println(err.Error())
+				//	continue
+				//}
+				//if confirm {
+				//	cmdStr := fmt.Sprintf("cd %s && rm -f %s", options.TarballPath, filename)
+				//	if err := NewCommand(cmdStr).Exec(); err != nil {
+				//		return err
+				//	}
+				//	klog.Infof("%v have been deleted and will try to download again", filename)
+				//	if err := retryDownload(filename, checksumFilename, version, options.TarballPath); err != nil {
+				//		return err
+				//	}
+				//} else {
+				//	klog.Warningf("failed to checksum and will continue to install.")
+				//}
+
+				cmdStr := fmt.Sprintf("cd %s && rm -f %s", options.TarballPath, filename)
+				if err := NewCommand(cmdStr).Exec(); err != nil {
+					return err
 				}
-				if confirm {
-					cmdStr := fmt.Sprintf("cd %s && rm -f %s", options.TarballPath, filename)
-					if err := NewCommand(cmdStr).Exec(); err != nil {
-						return err
-					}
-					klog.Infof("%v have been deleted and will try to download again", filename)
-					if err := retryDownload(filename, checksumFilename, version, options.TarballPath); err != nil {
-						return err
-					}
-				} else {
-					klog.Warningf("failed to checksum and will continue to install.")
+				klog.Infof("%v have been deleted and will try to download again", filename)
+				if err := retryDownload(filename, checksumFilename, version, options.TarballPath); err != nil {
+					klog.Errorf("file(%v) retry download error(%v)", filename, err)
+					continue
 				}
 				break
 			}
