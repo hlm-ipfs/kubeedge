@@ -19,11 +19,11 @@ package util
 import (
 	"archive/tar"
 	"compress/gzip"
-	"crypto/sha512"
 	"fmt"
 	"io"
-	"net/http"
+	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -35,24 +35,26 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog/v2"
 
 	types "github.com/kubeedge/kubeedge/keadm/cmd/keadm/app/cmd/common"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/edgecore/v1alpha1"
 )
 
 // Constants used by installers
-const (
-	EdgeServiceFile      = "edgecore.service"
-	CloudServiceFile     = "cloudcore.service"
-	KubeEdgePath         = "/etc/kubeedge/"
-	KubeEdgeUsrBinPath   = "/usr/local/bin"
-	KubeEdgeBinaryName   = "edgecore"
+var (
+	EdgeServiceFile    = "edgecore.service"
+	CloudServiceFile   = "cloudcore.service"
+	KubeEdgePath       = "/etc/kubeedge/"
+	KubeEdgeUsrBinPath = "/usr/local/bin"
+	KubeEdgeBinaryName = "edgecore"
 
 	KubeCloudBinaryName = "cloudcore"
 
-	KubeEdgeConfigDir        = KubeEdgePath + "config/"
-	KubeEdgeCloudCoreNewYaml = KubeEdgeConfigDir + "cloudcore.yaml"
-	KubeEdgeEdgeCoreNewYaml  = KubeEdgeConfigDir + "edgecore.yaml"
+	KubeEdgeConfigDir            = KubeEdgePath + "config/"
+	KubeEdgeCloudDefaultCertPath = KubeEdgePath + "certs/"
+	KubeEdgeCloudCoreNewYaml     = KubeEdgeConfigDir + "cloudcore.yaml"
+	KubeEdgeEdgeCoreNewYaml      = KubeEdgeConfigDir + "edgecore.yaml"
 
 	KubeEdgeLogPath = "/var/log/kubeedge/"
 	KubeEdgeCrdPath = KubeEdgePath + "crds"
@@ -78,9 +80,24 @@ const (
 )
 
 var (
-	KubeEdgeDownloadURL  = "https://kubeedge.pek3b.qingstor.com/releases/download"
-	ServiceFileURLFormat = "https://kubeedge.pek3b.qingstor.com/releases/service/%s/%s"
+	KubeEdgeDownloadURL  = "https://github.com/kubeedge/kubeedge/releases/download"
+	ServiceFileURLFormat = "https://raw.githubusercontent.com/kubeedge/kubeedge/release-%s/build/tools/%s"
 )
+
+func init() {
+	if str, ok := os.LookupEnv("KubeEdgeDownloadURL"); ok {
+		KubeEdgeDownloadURL = str
+	}
+	if str, ok := os.LookupEnv("ServiceFileURLFormat"); ok {
+		ServiceFileURLFormat = str
+	}
+	if str, ok := os.LookupEnv("KubeEdgeCRDDownloadURL"); ok {
+		KubeEdgeCRDDownloadURL = str
+	}
+	if str, ok := os.LookupEnv("KubeLatestReleaseVersionURL"); ok {
+		latestReleaseVersionURL = str
+	}
+}
 
 // AddToolVals gets the value and default values of each flags and collects them in temporary cache
 func AddToolVals(f *pflag.Flag, flagData map[string]types.FlagData) {
@@ -168,22 +185,15 @@ func RunningModule() (types.ModuleRunning, error) {
 
 // GetLatestVersion return the latest non-prerelease, non-draft version of kubeedge in releases
 func GetLatestVersion() (string, error) {
-	// curl https://kubeedge.io/latestversion
-	resp, err := http.Get(latestReleaseVersionURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to get latest version from %s: %v", latestReleaseVersionURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get latest version from %s, expected %d, got status code: %d", latestReleaseVersionURL, http.StatusOK, resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
+	//Download the tar from repo
+	versionURL := "curl -k " + latestReleaseVersionURL
+	cmd := exec.Command("sh", "-c", versionURL)
+	latestReleaseData, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
-	return string(body), nil
+
+	return string(latestReleaseData), nil
 }
 
 // BuildConfig builds config from flags
@@ -200,18 +210,18 @@ func BuildConfig(kubeConfig, master string) (conf *rest.Config, err error) {
 func isK8SComponentInstalled(kubeConfig, master string) error {
 	config, err := BuildConfig(kubeConfig, master)
 	if err != nil {
-		return fmt.Errorf("failed to build config, err: %v", err)
+		return fmt.Errorf("Failed to build config, err: %v", err)
 	}
 
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
-		return fmt.Errorf("failed to init discovery client, err: %v", err)
+		return fmt.Errorf("Failed to init discovery client, err: %v", err)
 	}
 
 	discoveryClient.RESTClient().Post()
 	serverVersion, err := discoveryClient.ServerVersion()
 	if err != nil {
-		return fmt.Errorf("failed to get the version of K8s master, please check whether K8s was successfully installed, err: %v", err)
+		return fmt.Errorf("Failed to get the version of K8s master, please check whether K8s was successfully installed, err: %v", err)
 	}
 
 	return checkKubernetesVersion(serverVersion)
@@ -223,13 +233,13 @@ func checkKubernetesVersion(serverVersion *version.Info) error {
 
 	k8sMinorVersion, err := strconv.Atoi(minorVersion)
 	if err != nil {
-		return fmt.Errorf("could not parse the minor version of K8s, error: %s", err)
+		return fmt.Errorf("Could not parse the minor version of K8s, error: %s", err)
 	}
 	if k8sMinorVersion >= types.DefaultK8SMinimumVersion {
 		return nil
 	}
 
-	return fmt.Errorf("your minor version of K8s is lower than %d, please reinstall newer version", types.DefaultK8SMinimumVersion)
+	return fmt.Errorf("Your minor version of K8s is lower than %d, please reinstall newer version", types.DefaultK8SMinimumVersion)
 }
 
 // installKubeEdge downloads the provided version of KubeEdge.
@@ -269,23 +279,33 @@ func installKubeEdge(options types.InstallOptions, arch string, version semver.V
 		fmt.Printf("Expected or Default KubeEdge version %v is already downloaded and will checksum for it. \n", version)
 		if success, _ := checkSum(filename, checksumFilename, version, options.TarballPath); !success {
 			fmt.Printf("%v in your path checksum failed and do you want to delete this file and try to download again? \n", filename)
-			for {
-				confirm, err := askForconfirm()
-				if err != nil {
-					fmt.Println(err.Error())
-					continue
+			for i := 0; i < 3; i++ {
+				//confirm, err := askForconfirm()
+				//if err != nil {
+				//	fmt.Println(err.Error())
+				//	continue
+				//}
+				//if confirm {
+				//	cmdStr := fmt.Sprintf("cd %s && rm -f %s", options.TarballPath, filename)
+				//	if err := NewCommand(cmdStr).Exec(); err != nil {
+				//		return err
+				//	}
+				//	klog.Infof("%v have been deleted and will try to download again", filename)
+				//	if err := retryDownload(filename, checksumFilename, version, options.TarballPath); err != nil {
+				//		return err
+				//	}
+				//} else {
+				//	klog.Warningf("failed to checksum and will continue to install.")
+				//}
+
+				cmdStr := fmt.Sprintf("cd %s && rm -f %s", options.TarballPath, filename)
+				if err := NewCommand(cmdStr).Exec(); err != nil {
+					return err
 				}
-				if confirm {
-					cmdStr := fmt.Sprintf("cd %s && rm -f %s", options.TarballPath, filename)
-					if err := NewCommand(cmdStr).Exec(); err != nil {
-						return err
-					}
-					fmt.Printf("%v have been deleted and will try to download again\n", filename)
-					if err := retryDownload(filename, checksumFilename, version, options.TarballPath); err != nil {
-						return err
-					}
-				} else {
-					fmt.Println("failed to checksum and will continue to install.")
+				klog.Infof("%v have been deleted and will try to download again", filename)
+				if err := retryDownload(filename, checksumFilename, version, options.TarballPath); err != nil {
+					klog.Errorf("file(%v) retry download error(%v)", filename, err)
+					continue
 				}
 				break
 			}
@@ -448,30 +468,12 @@ func hasSystemd() bool {
 	return fi.IsDir()
 }
 
-// computeSHA512Checksum returns the SHA512 checksum of the given file
-func computeSHA512Checksum(filepath string) (string, error) {
-	f, err := os.Open(filepath)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha512.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
 func checkSum(filename, checksumFilename string, version semver.Version, tarballPath string) (bool, error) {
 	//Verify the tar with checksum
 	fmt.Printf("%s checksum: \n", filename)
-
-	filepath := fmt.Sprintf("%s/%s", tarballPath, filename)
-	actualChecksum, err := computeSHA512Checksum(filepath)
-	if err != nil {
-		return false, fmt.Errorf("failed to compute checksum for %s: %v", filename, err)
+	getActualCheckSum := NewCommand(fmt.Sprintf("cd %s && sha512sum %s | awk '{split($0,a,\"[ ]\"); print a[1]}'", tarballPath, filename))
+	if err := getActualCheckSum.Exec(); err != nil {
+		return false, err
 	}
 
 	fmt.Printf("%s content: \n", checksumFilename)
@@ -479,12 +481,12 @@ func checkSum(filename, checksumFilename string, version semver.Version, tarball
 
 	if _, err := os.Stat(checksumFilepath); err == nil {
 		fmt.Printf("Expected or Default checksum file %s is already downloaded. \n", checksumFilename)
-		content, err := os.ReadFile(checksumFilepath)
+		content, err := ioutil.ReadFile(checksumFilepath)
 		if err != nil {
 			return false, err
 		}
 		checksum := strings.Replace(string(content), "\n", "", -1)
-		if checksum != actualChecksum {
+		if checksum != getActualCheckSum.GetStdOut() {
 			fmt.Printf("Failed to verify the checksum of %s ... \n\n", filename)
 			return false, nil
 		}
@@ -494,7 +496,7 @@ func checkSum(filename, checksumFilename string, version semver.Version, tarball
 			return false, err
 		}
 
-		if getDesiredCheckSum.GetStdOut() != actualChecksum {
+		if getDesiredCheckSum.GetStdOut() != getActualCheckSum.GetStdOut() {
 			fmt.Printf("Failed to verify the checksum of %s ... \n\n", filename)
 			return false, nil
 		}
@@ -637,7 +639,7 @@ func askForconfirm() (bool, error) {
 	} else if s == "n" {
 		return false, nil
 	} else {
-		return false, fmt.Errorf("invalid Input")
+		return false, fmt.Errorf("Invalid Input")
 	}
 }
 
@@ -665,6 +667,16 @@ func ParseEdgecoreConfig(edgecorePath string) (*v1alpha1.EdgeCoreConfig, error) 
 		return nil, err
 	}
 	return edgeCoreConfig, nil
+}
+
+// IsContain determines if it is in the array
+func IsContain(items []string, item string) bool {
+	for _, eachItem := range items {
+		if eachItem == item {
+			return true
+		}
+	}
+	return false
 }
 
 // PrintFail prints fail
