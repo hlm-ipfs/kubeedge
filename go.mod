@@ -14,7 +14,7 @@ require (
 	github.com/docker/docker v20.10.2+incompatible
 	github.com/eclipse/paho.mqtt.golang v1.2.0
 	github.com/emicklei/go-restful v2.9.6+incompatible
-	github.com/go-ole/go-ole v1.2.4 // indirect
+	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/golang/mock v1.4.4
 	github.com/golang/protobuf v1.4.3
@@ -34,10 +34,12 @@ require (
 	github.com/onsi/gomega v1.8.1
 	github.com/paypal/gatt v0.0.0-20151011220935-4ae819d591cf
 	github.com/prometheus/client_golang v1.7.1
-	github.com/shirou/gopsutil v2.20.9+incompatible
+	github.com/shirou/gopsutil v2.21.11+incompatible
 	github.com/spf13/cobra v1.1.1
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.6.1
+	github.com/tklauser/go-sysconf v0.3.10 // indirect
+	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	golang.org/x/net v0.0.0-20210224082022-3d97a244fca7
 	google.golang.org/grpc v1.27.1
 	k8s.io/api v0.21.4
