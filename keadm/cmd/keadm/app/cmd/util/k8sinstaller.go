@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -129,7 +130,8 @@ func installCRDs(ks *K8SInstTool) error {
 		},
 	}
 	version := fmt.Sprintf("%d.%d", ks.ToolVersion.Major, ks.ToolVersion.Minor)
-	CRDDownloadURL := fmt.Sprintf(KubeEdgeCRDDownloadURL, version)
+	KubeEdgeCRDFormat := strings.TrimSuffix(KubeEdgeCRDDownloadURL, "/") + "/release-%s/build/crds"
+	CRDDownloadURL := fmt.Sprintf(KubeEdgeCRDFormat, version)
 	for dir := range crds {
 		crdPath := KubeEdgeCrdPath + "/" + dir
 		err = os.MkdirAll(crdPath, os.ModePerm)

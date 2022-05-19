@@ -43,12 +43,11 @@ import (
 
 // Constants used by installers
 var (
-	EdgeServiceFile    = "edgecore.service"
-	CloudServiceFile   = "cloudcore.service"
-	KubeEdgePath       = "/etc/kubeedge/"
-	KubeEdgeUsrBinPath = "/usr/local/bin"
-	KubeEdgeBinaryName = "edgecore"
-
+	EdgeServiceFile     = "edgecore.service"
+	CloudServiceFile    = "cloudcore.service"
+	KubeEdgePath        = "/etc/kubeedge/"
+	KubeEdgeUsrBinPath  = "/usr/local/bin"
+	KubeEdgeBinaryName  = "edgecore"
 	KubeCloudBinaryName = "cloudcore"
 
 	KubeEdgeConfigDir            = KubeEdgePath + "config/"
@@ -56,19 +55,16 @@ var (
 	KubeEdgeCloudCoreNewYaml     = KubeEdgeConfigDir + "cloudcore.yaml"
 	KubeEdgeEdgeCoreNewYaml      = KubeEdgeConfigDir + "edgecore.yaml"
 
-	KubeEdgeLogPath = "/var/log/kubeedge/"
-	KubeEdgeCrdPath = KubeEdgePath + "crds"
-
+	KubeEdgeLogPath    = "/var/log/kubeedge/"
+	KubeEdgeCrdPath    = KubeEdgePath + "crds"
 	KubeEdgeSocketPath = "/var/lib/kubeedge/"
+	EdgeRootDir        = "/var/lib/edged"
+	SystemdBootPath    = "/run/systemd/system"
 
-	EdgeRootDir = "/var/lib/edged"
-
-	SystemdBootPath = "/run/systemd/system"
-
-	KubeEdgeCRDDownloadURL = "https://raw.githubusercontent.com/kubeedge/kubeedge/release-%s/build/crds"
-
-	latestReleaseVersionURL = "https://kubeedge.io/latestversion"
-	RetryTimes              = 5
+	LatestReleaseVersionURL = "https://kubeedge.io/latestversion"
+	KubeEdgeDownloadURL     = "https://github.com/kubeedge/kubeedge/releases/download"
+	ServiceFileDownloadURL  = "https://raw.githubusercontent.com/kubeedge/kubeedge"
+	KubeEdgeCRDDownloadURL  = "https://raw.githubusercontent.com/kubeedge/kubeedge"
 
 	OSArchAMD64 string = "amd64"
 	OSArchARM64 string = "arm64"
@@ -77,25 +73,22 @@ var (
 	APT    string = "apt"
 	YUM    string = "yum"
 	PACMAN string = "pacman"
-)
 
-var (
-	KubeEdgeDownloadURL  = "https://github.com/kubeedge/kubeedge/releases/download"
-	ServiceFileURLFormat = "https://raw.githubusercontent.com/kubeedge/kubeedge/release-%s/build/tools/%s"
+	RetryTimes = 5
 )
 
 func init() {
-	if str, ok := os.LookupEnv("KubeEdgeDownloadURL"); ok {
-		KubeEdgeDownloadURL = str
+	if str, ok := os.LookupEnv("KubeLatestReleaseVersionURL"); ok {
+		LatestReleaseVersionURL = strings.TrimSuffix(str, "/")
 	}
-	if str, ok := os.LookupEnv("ServiceFileURLFormat"); ok {
-		ServiceFileURLFormat = str
+	if str, ok := os.LookupEnv("KubeEdgeDownloadURL"); ok {
+		KubeEdgeDownloadURL = strings.TrimSuffix(str, "/")
+	}
+	if str, ok := os.LookupEnv("ServiceFileDownloadURL"); ok {
+		ServiceFileDownloadURL = strings.TrimSuffix(str, "/")
 	}
 	if str, ok := os.LookupEnv("KubeEdgeCRDDownloadURL"); ok {
-		KubeEdgeCRDDownloadURL = str
-	}
-	if str, ok := os.LookupEnv("KubeLatestReleaseVersionURL"); ok {
-		latestReleaseVersionURL = str
+		KubeEdgeCRDDownloadURL = strings.TrimSuffix(str, "/")
 	}
 }
 
@@ -186,7 +179,7 @@ func RunningModule() (types.ModuleRunning, error) {
 // GetLatestVersion return the latest non-prerelease, non-draft version of kubeedge in releases
 func GetLatestVersion() (string, error) {
 	//Download the tar from repo
-	versionURL := "curl -k " + latestReleaseVersionURL
+	versionURL := "curl -k " + LatestReleaseVersionURL
 	cmd := exec.Command("sh", "-c", versionURL)
 	latestReleaseData, err := cmd.Output()
 	if err != nil {
@@ -491,7 +484,7 @@ func checkSum(filename, checksumFilename string, version semver.Version, tarball
 			return false, nil
 		}
 	} else {
-		getDesiredCheckSum := NewCommand(fmt.Sprintf("wget -qO- %s/v%s/%s", KubeEdgeDownloadURL, version, checksumFilename))
+		getDesiredCheckSum := NewCommand(fmt.Sprintf("wget -qO- %s/v%s/%s", strings.TrimSuffix(KubeEdgeDownloadURL, "/"), version, checksumFilename))
 		if err := getDesiredCheckSum.Exec(); err != nil {
 			return false, err
 		}
@@ -510,7 +503,7 @@ func retryDownload(filename, checksumFilename string, version semver.Version, ta
 	for try := 0; try < downloadRetryTimes; try++ {
 		//Download the tar from repo
 		dwnldURL := fmt.Sprintf("cd %s && wget -k --no-check-certificate --progress=bar:force %s/v%s/%s",
-			tarballPath, KubeEdgeDownloadURL, version, filename)
+			tarballPath, strings.TrimSuffix(KubeEdgeDownloadURL, "/"), version, filename)
 		if err := NewCommand(dwnldURL).Exec(); err != nil {
 			return err
 		}
@@ -722,6 +715,7 @@ func downloadServiceFile(componentType types.ComponentType, version semver.Versi
 		}
 		ServiceFilePath := storeDir + "/" + ServiceFileName
 		strippedVersion := fmt.Sprintf("%d.%d", version.Major, version.Minor)
+		ServiceFileURLFormat := strings.TrimSuffix(ServiceFileDownloadURL, "/") + "/release-%s/build/tools/%s"
 		ServiceFileURL := fmt.Sprintf(ServiceFileURLFormat, strippedVersion, ServiceFileName)
 		if _, err := os.Stat(ServiceFilePath); err != nil {
 			if os.IsNotExist(err) {
