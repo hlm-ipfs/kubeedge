@@ -19,14 +19,11 @@ package util
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
-	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kubeedge/kubeedge/common/constants"
 	types "github.com/kubeedge/kubeedge/keadm/cmd/keadm/app/cmd/common"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/edgecore/v1alpha1"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/edgecore/v1alpha1/validation"
@@ -170,7 +167,6 @@ func (ku *KubeEdgeInstTool) createEdgeConfigFiles() error {
 	} else {
 		edgeCoreConfig.Modules.EdgeHub.HTTPServer = "https://" + cloudCoreIP + ":10002"
 	}
-	edgeCoreConfig.Modules.EdgeStream.TunnelServer = net.JoinHostPort(cloudCoreIP, strconv.Itoa(constants.DefaultTunnelPort))
 
 	if len(ku.Labels) >= 1 {
 		labelsMap := make(map[string]string)
